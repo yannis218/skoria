@@ -62,7 +62,7 @@ fn visit_inn(game: &mut State) -> Then {
 }
 
 fn visit_town(game: &mut State, race : player::Race) -> Then {
-    &mut game.pc.inflict(player::Fuss::Winded, -99.);
+    game.pc.inflict(player::Fuss::Winded, -99.);
     ui::message((12,12,12), &format!("The {}s welcome you!", player::RACE_NAMES[race as usize]));
     game.render_msgs();
     let shops = ["trader", "supplier", "trainer", "wizard"];

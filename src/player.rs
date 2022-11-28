@@ -90,8 +90,8 @@ impl Player {
     }
 
     fn statbase(&self, s : usize) -> u8 { self.stats[s] }
-    fn stat<T : enum_map::Enum<u32>>(&self, s : T) -> u8 {
-        let i = s.to_usize();
+    fn stat<T : enum_map::Enum>(&self, s : T) -> u8 {
+        let i = s.into_usize();
         self.stats[i] - ((self.stats[i] - 1) as f32 * num::clamp(self.fuss[i] - 12., 0., 12.) / 12.) as u8
     }
 
@@ -133,17 +133,17 @@ impl Player {
     }
 
     pub fn eqbase(&self) -> u8 { self.job as u8 * 4 }
-    pub fn equip<T : enum_map::Enum<u8>>(&self, e : T) -> u8 { *self.equal.val.get(e.to_usize().wrapping_sub(self.eqbase() as usize)).unwrap_or(&0) }
+    pub fn equip<T : enum_map::Enum>(&self, e : T) -> u8 { *self.equal.val.get(e.into_usize().wrapping_sub(self.eqbase() as usize)).unwrap_or(&0) }
 
-    pub fn goods<T : enum_map::Enum<u16>>(&self, g : T) -> u16 { self.goods[g.to_usize()] }
-    pub fn loot<T : enum_map::Enum<u16> + Copy>(&mut self, g : T, d : i16) {
-        self.goods[g.to_usize()] = if d < 0 { self.goods[g.to_usize()].saturating_sub((-d) as u16) } else { self.goods[g.to_usize()] + d as u16 }
+    pub fn goods<T : enum_map::Enum>(&self, g : T) -> u16 { self.goods[g.into_usize()] }
+    pub fn loot<T : enum_map::Enum + Copy>(&mut self, g : T, d : i16) {
+        self.goods[g.into_usize()] = if d < 0 { self.goods[g.into_usize()].saturating_sub((-d) as u16) } else { self.goods[g.into_usize()] + d as u16 }
     }
 
-    pub fn fuss<T : enum_map::Enum<f32>>(&self, f : T) -> f32 { self.fuss[f.to_usize()] }
-    pub fn inflict<T : enum_map::Enum<u16> + Copy>(&mut self, f : T, d : f32) {
-        self.fuss[f.to_usize()] += d;
-        if self.fuss[f.to_usize()] < 0. { self.fuss[f.to_usize()] = 0. }
+    pub fn fuss<T : enum_map::Enum>(&self, f : T) -> f32 { self.fuss[f.into_usize()] }
+    pub fn inflict<T : enum_map::Enum + Copy>(&mut self, f : T, d : f32) {
+        self.fuss[f.into_usize()] += d;
+        if self.fuss[f.into_usize()] < 0. { self.fuss[f.into_usize()] = 0. }
     }
 
     // ACTIONS
