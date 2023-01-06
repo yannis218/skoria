@@ -29,7 +29,12 @@ pub static JOB_NAMES:  [&str; 4] = [ "Guard", "Hunter", "Scholar", "Sneak" ];
 pub static STAT_NAMES: [&str; 4] = [ "Brawn", "Speed", "Craft", "Sense" ];
 pub static FUSS_NAMES: [&str; 4] = [ "Bashed", "Winded", "Hungry", "Sleepy" ];
 pub static GOOD_NAMES: [&str; 4] = [ "Rations", "Potions", "Florins", "Crystal" ];
-pub static EQUI_NAMES: [&str;16] = [ "Spear", "Shield", "Byrnie", "Boots",  "Knife", "Bow", "Coat", "Hat",  "Staff", "Wand", "Robe", "Book",  "Dagger", "Sling", "Cape", "Mask"];
+pub static EQUI_NAMES: [&str;16] = [
+    "Spear", "Shield", "Byrnie", "Boots",   // Guard
+    "Knife", "Bow", "Coat", "Hat",          // Hunter
+    "Staff", "Wand", "Robe", "Book",        // Scholar
+    "Dagger", "Sling", "Cape", "Mask"       // Sneak
+];
 
 static RACIAL_MODS: [[u8; 4]; 4] = [
     [ 5, 1, 2, 4], // Dwarf
@@ -280,7 +285,7 @@ pub fn char_create() -> Result<Player, ui::Para> {
                     Ok(bonus) => { stats[bonus as usize] += bpt; bpt -= 1; }
                 }
             }
-            ui::print(8, 2 + bonus as u32, &format!("{:2}", stats[bonus as usize]));
+            ui::print(8, 2 + bonus, &format!("{:2}", stats[bonus as usize]));
             ui::flush();
             return Ok(stats)
         }
@@ -303,7 +308,7 @@ pub fn char_create() -> Result<Player, ui::Para> {
         }
     }
 
-    let mut race : u32 = 0;
+    let mut race : usize = 0;
     'pick_race: loop {
         ui::cls();
         race = ui::menu(0, 0, "Choose Race", race, &RACE_NAMES)?;

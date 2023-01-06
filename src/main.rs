@@ -115,8 +115,8 @@ impl State {
     }
 
     fn render_view(&self) {
-        let dungh = self.dung.tiles.height() as u32;
-        let dungw = self.dung.tiles.width() as u32;
+        let dungh = self.dung.tiles.height();
+        let dungw = self.dung.tiles.width();
         ui::clear(0, 2, dungw, dungh);
         ui::transparent();
         for r in 0..dungh { for c in 0..dungw { self.render_tile(Pos(r, c), false); } }
@@ -142,8 +142,8 @@ impl State {
     }
 
     fn render_msgs(&self) {
-        let dungh = self.dung.tiles.height() as u32;
-        let dungw = self.dung.tiles.width() as u32;
+        let dungh = self.dung.tiles.height();
+        let dungw = self.dung.tiles.width();
         ui::display_messages(dungw+1, 2, dungh);
     }
 
@@ -219,10 +219,10 @@ impl State {
         tile.activate(self)
     }
 
-    pub fn menu<T: AsRef<str>>(&self, title : &str, init : u32, options : &[T]) -> Result<u32, ui::Para> {
+    pub fn menu<T: AsRef<str>>(&self, title : &str, init : usize, options : &[T]) -> Result<usize, ui::Para> {
         let dungw = self.dung.tiles.width();
         ui::base_colour();
-        let result = ui::menu(2+dungw as u32, 2, title, init, options);
+        let result = ui::menu(2+dungw, 2, title, init, options);
         result
     }
 
@@ -308,8 +308,8 @@ impl State {
     }
 
     fn target(&mut self) -> Result<Pos, ui::Para> { // TODO: Messy; refactor.
-        let dungh = self.dung.tiles.height() as u32;
-        let dungw = self.dung.tiles.width() as u32;
+        let dungh = self.dung.tiles.height();
+        let dungw = self.dung.tiles.width();
         let render = |p:Pos, typ : dungeon::TB, c : ui::Col| {
             let typ = &dungeon::TILE_BASES[typ];
             ui::background(typ.back);
@@ -338,12 +338,20 @@ impl State {
             }
             ui::flush();
             let new_pos = match ui::keyms(150) {
-                Some(ui::Key::Quit) => { self.pc.stop_action(); return Err(ui::Para::Quit) }, Some(ui::Key::Esc) => { self.pc.stop_action(); return Err(ui::Para::Back) }
-                Some(ui::Key::Up) => { loc.pos + upup(loc.pos) }, Some(ui::Key::Dn) => { loc.pos + down(loc.pos) }
-                Some(ui::Key::Lf) => { loc.pos + left(loc.pos) }, Some(ui::Key::Rg) => { loc.pos + rght(loc.pos) }
-                Some(ui::Key::UL) => { loc.pos + upup(loc.pos) + left(loc.pos) }, Some(ui::Key::DL) => { loc.pos + down(loc.pos) + left(loc.pos) }
-                Some(ui::Key::UR) => { loc.pos + upup(loc.pos) + rght(loc.pos) }, Some(ui::Key::DR) => { loc.pos + down(loc.pos) + rght(loc.pos) }
-                Some(ui::Key::Ret) => { self.pc.stop_action(); return Ok(loc.pos) }
+                Some(ui::Key::Quit) => { self.pc.stop_action(); return Err(ui::Para::Quit) }
+                Some(ui::Key::Special(sk)) => match sk {
+                    ui::SpecialKey::Esc => { self.pc.stop_action(); return Err(ui::Para::Back) }
+                    ui::SpecialKey::Up => { loc.pos + upup(loc.pos) }
+                    ui::SpecialKey::Dn => { loc.pos + down(loc.pos) }
+                    ui::SpecialKey::Lf => { loc.pos + left(loc.pos) }
+                    ui::SpecialKey::Rg => { loc.pos + rght(loc.pos) }
+                    ui::SpecialKey::UL => { loc.pos + upup(loc.pos) + left(loc.pos) }
+                    ui::SpecialKey::DL => { loc.pos + down(loc.pos) + left(loc.pos) }
+                    ui::SpecialKey::UR => { loc.pos + upup(loc.pos) + rght(loc.pos) }
+                    ui::SpecialKey::DR => { loc.pos + down(loc.pos) + rght(loc.pos) }
+                    ui::SpecialKey::Ret => { self.pc.stop_action(); return Ok(loc.pos) }
+                    _ => { loc.pos }
+                }
                 _ => { loc.pos }
             };
             if new_pos != loc.pos {
@@ -369,21 +377,28 @@ impl State {
             None => {
                 match ui::key() {
                     ui::Key::Quit => { self.save_game(); return Then::Quit }
-                    ui::Key::Esc => { self.game_menu() }
-                    ui::Key::Up => { self.try_move(-1, 0) }
-                    ui::Key::Dn => { self.try_move(1, 0) }
-                    ui::Key::Lf => { self.try_move(0, -1) }
-                    ui::Key::Rg => { self.try_move(0, 1) }
-                    ui::Key::UL => { self.try_move(-1, -1) }
-                    ui::Key::DL => { self.try_move(1, -1) }
-                    ui::Key::UR => { self.try_move(-1, 1) }
-                    ui::Key::DR => { self.try_move(1, 1) }
-                    ui::Key::Ret => { self.activate() }
-                    ui::Key::Mid => { self.pc.rest() }
-                    ui::Key::Pls => { self.pc.faster(); Then::CarryOn(0.) }
-                    ui::Key::Min => { self.pc.sneakier(); Then::CarryOn(0.) }
-                    ui::Key::Slash => { match self.target() { Ok(p) => { self.shoot(p) }, Err(ui::Para::Quit) => { self.save_game(); Then::Quit }, _ => { Then::CarryOn(0.) } } }
-                    //_ => {}
+                    ui::Key::Special(sk) => match sk {
+                        ui::SpecialKey::Esc => { self.game_menu() }
+                        ui::SpecialKey::Up => { self.try_move(-1, 0) }
+                        ui::SpecialKey::Dn => { self.try_move(1, 0) }
+                        ui::SpecialKey::Lf => { self.try_move(0, -1) }
+                        ui::SpecialKey::Rg => { self.try_move(0, 1) }
+                        ui::SpecialKey::UL => { self.try_move(-1, -1) }
+                        ui::SpecialKey::DL => { self.try_move(1, -1) }
+                        ui::SpecialKey::UR => { self.try_move(-1, 1) }
+                        ui::SpecialKey::DR => { self.try_move(1, 1) }
+                        ui::SpecialKey::Ret => { self.activate() }
+                        ui::SpecialKey::Mid => { self.pc.rest() }
+                        ui::SpecialKey::Pls => { self.pc.faster(); Then::CarryOn(0.) }
+                        ui::SpecialKey::Min => { self.pc.sneakier(); Then::CarryOn(0.) }
+                        ui::SpecialKey::Slash => match self.target() {
+                            Ok(p) => { self.shoot(p) }
+                            Err(ui::Para::Quit) => { self.save_game(); Then::Quit }
+                            _ => { Then::CarryOn(0.) }
+                        }
+                        _ => Then::CarryOn(0.)
+                    }
+                    _ => Then::CarryOn(0.)
                 }
             }
         }
@@ -518,7 +533,5 @@ fn start_menu() {
 
 fn main() {
     println!("Skoria running.");
-    ui::initialise();
-    start_menu();
-    ui::terminate();
+    ui::start(start_menu);
 }

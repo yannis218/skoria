@@ -117,8 +117,8 @@ pub struct Field {
 }
 
 impl Field {
-    pub fn width(&self) -> u32 { 40 }
-    pub fn height(&self) -> u32 { 20 }
+    pub fn width(&self) -> usize { 40 }
+    pub fn height(&self) -> usize { 20 }
 }
 
 impl Default for Field {
@@ -136,7 +136,7 @@ impl ops::IndexMut<Pos> for Field {
 
 #[derive(Serialize, Deserialize)]
 pub struct Room {
-    pub lx : u32, pub rx : u32, pub ty : u32, pub by : u32
+    pub lx : usize, pub rx : usize, pub ty : usize, pub by : usize
 }
 
 #[derive(Default, Serialize, Deserialize)]

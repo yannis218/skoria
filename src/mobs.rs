@@ -106,7 +106,7 @@ pub fn find_empty_space(dung : &dungeon::Map, popn : &PopRec) -> Option<Pos>{
     let dungh = dung.tiles.height();
     let dungw = dung.tiles.width();
     for _i in 0..1000 {
-        let p = crate::Pos(rnd::rand(1, dungh - 2) as u32, rnd::rand(1, dungw - 2) as u32);
+        let p = crate::Pos(rnd::rand(1, dungh - 2), rnd::rand(1, dungw - 2));
         if !dung.tiles[p].passable() { continue }
         if dung.tiles[p].fea != dungeon::TF::Nil { continue }
         if popn.mobs.iter().find(|m|{m.pos == p}).is_some() { continue }

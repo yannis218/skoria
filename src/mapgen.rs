@@ -10,14 +10,14 @@ fn overlap(a : &Room, b : &Room) -> bool {
     true
 }
 
-fn fill(dung: &mut Map, ty : u32, by : u32, lx : u32, rx : u32, typ : TB) {
+fn fill(dung: &mut Map, ty : usize, by : usize, lx : usize, rx : usize, typ : TB) {
     for r in ty..=by { for c in lx..=rx {
         dung.tiles[crate::Pos(r, c)].typ = typ;
         dung.tiles[crate::Pos(r, c)].fea = TF::Nil;
     } }
 }
 
-fn rand_room(nrooms : u32, dungw : u32, dungh : u32) -> Room {
+fn rand_room(nrooms : usize, dungw : usize, dungh : usize) -> Room {
     let width = rnd::rand(9-nrooms, 15-nrooms);
     let height = rnd::rand(9-nrooms, 12-nrooms);
     let lx = rnd::rand(1, dungw-width-1);
@@ -26,12 +26,12 @@ fn rand_room(nrooms : u32, dungw : u32, dungh : u32) -> Room {
     Room{ lx, ty, rx:lx+width-1, by:ty+height-1 }
 }
 
-fn gen_rooms(dung : &mut Map, nrooms : u32) {
+fn gen_rooms(dung : &mut Map, nrooms : usize) {
     let dungh = dung.tiles.height();
     let dungw = dung.tiles.width();
     for room in 0..nrooms {
         'roomgen: loop {
-            let rm = rand_room(nrooms, dungw as u32, dungh as u32);
+            let rm = rand_room(nrooms, dungw, dungh);
             for prev in 0..room { if overlap(&dung.rooms[prev as usize], &rm) { continue 'roomgen } }
             fill(dung, rm.ty, rm.by, rm.lx, rm.rx, TB::Floor);
             dung.rooms.push(rm);
@@ -54,8 +54,8 @@ fn room_join(dung : &mut Map, a : usize, b : usize) {
         let dr : i32 = crb as i32 - r as i32;
         dung.tiles[crate::Pos(r, c)].typ = TB::Floor;
         let dist = dc*dc + dr*dr;
-        if rnd::rand(1, dist) <= (dc*dc) { c = c.wrapping_add(num::signum(dc) as u32)
-        } else { r = r.wrapping_add(num::signum(dr) as u32) }
+        if rnd::rand(1, dist) <= (dc*dc) { c = c.wrapping_add(num::signum(dc) as usize)
+        } else { r = r.wrapping_add(num::signum(dr) as usize) }
     }
 }
 
@@ -75,8 +75,8 @@ fn place_stairs(dung : &mut Map) {
 }
 
 fn tunnel_place(dung: &mut Map) -> Pos {
-    let dungh = dung.tiles.height() as u32;
-    let dungw = dung.tiles.width() as u32;
+    let dungh = dung.tiles.height();
+    let dungw = dung.tiles.width();
     loop {
         let dir = rnd::rand(0, 3); // NSEW
         let mut scan = match dir {
@@ -141,8 +141,8 @@ pub fn run(dung: &mut Map, lev : Level) {
     let tunnelfore = if lev.shaft < 19 { reseed(lev.fore()); rnd::rand(1, 4) } else { 100 };
     reseed(lev);
     let tunnelback = if lev.shaft > 0 { rnd::rand(1, 4) } else { 100 };
-    let dungh = dung.tiles.height() as u32;
-    let dungw = dung.tiles.width() as u32;
+    let dungh = dung.tiles.height();
+    let dungw = dung.tiles.width();
     fill(dung, 0, dungh-1, 0, dungw-1, TB::Rock);
     dung.rooms.clear();
     let nrooms = rnd::rand(3, 7);

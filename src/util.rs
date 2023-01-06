@@ -66,10 +66,10 @@ impl Dist {
 impl ops::Add<Dist> for Dist { type Output = Self; fn add(self, other: Dist) -> Self { Self(self.0 + other.0, self.1 + other.1) } }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct Pos(pub u32, pub u32);
+pub struct Pos(pub usize, pub usize);
 
-impl ops::Add<Dist> for Pos { type Output = Self; fn add(self, other: Dist) -> Self { Self(self.0.wrapping_add(other.0 as u32), self.1.wrapping_add(other.1 as u32)) } }
-impl ops::AddAssign<Dist> for Pos { fn add_assign(&mut self, other: Dist) { self.0 = self.0.wrapping_add(other.0 as u32); self.1 = self.1.wrapping_add(other.1 as u32) } }
+impl ops::Add<Dist> for Pos { type Output = Self; fn add(self, other: Dist) -> Self { Self(self.0.wrapping_add(other.0 as usize), self.1.wrapping_add(other.1 as usize)) } }
+impl ops::AddAssign<Dist> for Pos { fn add_assign(&mut self, other: Dist) { self.0 = self.0.wrapping_add(other.0 as usize); self.1 = self.1.wrapping_add(other.1 as usize) } }
 impl ops::Sub<Pos> for Pos { type Output = Dist; fn sub(self, other: Pos) -> Dist { Dist(self.0 as i32 - other.0 as i32, self.1 as i32 - other.1 as i32) } }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]

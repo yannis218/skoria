@@ -1,15 +1,19 @@
-# skoria
+# SKORIA!
 
-To build:
+A roguelike written in Rust.
+
+## To build:
 ```
 $ cargo build
 ```
-To run:
+
+## To run:
 
 ```
-$ LD_LIBRARY_PATH=. target/debug/skoria
+$ target/debug/skoria
 ```
-To play:
+
+## To play:
 
 Menus - Cursor keys, Enter/Ret, Escape
 

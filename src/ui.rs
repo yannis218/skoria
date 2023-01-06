@@ -1,157 +1,341 @@
-use std::cmp;
-use bear_lib_terminal::Color;
-use bear_lib_terminal::geometry::{Point, Rect};
-use bear_lib_terminal::terminal::{self, Event, KeyCode};
+use speedy2d::color::Color;
+use speedy2d::font;
+use speedy2d::font::Font;
+use speedy2d::font::TextLayout;
+use speedy2d::font::TextOptions;
+use speedy2d::shape::{Rectangle};
+use speedy2d::window::{KeyScancode, WindowCreationOptions};
+use speedy2d::window::VirtualKeyCode;
+use speedy2d::window::WindowHandler;
+use speedy2d::window::WindowHelper;
+use speedy2d::window::WindowSize;
+use speedy2d::Graphics2D;
+use speedy2d::Window;
 
-pub enum Key { Quit, Esc, Ret, Up, Dn, Lf, Rg, UL, UR, DL, DR, Mid, Pls, Min, Slash }
+use std::cell::RefCell;
+use std::cmp::{min, max};
+use std::sync::mpsc::channel;
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::Sender;
+use std::thread;
+use std::time::Duration;
+use speedy2d::dimen::UVec2;
 
-fn ev2key(e : Event) -> Option<Key> {
-    match e {
-        Event::KeyPressed{key:KeyCode::Escape, ctrl:true, shift:true}
-        | Event::Close => { Some(Key::Quit) },
-        Event::KeyPressed{key:KeyCode::Escape, ctrl:false, shift:false} => { Some(Key::Esc) }
-        Event::KeyPressed{key:KeyCode::NumEnter, ctrl:false, shift:false} |
-        Event::KeyPressed{key:KeyCode::Enter, ctrl:false, shift:false} => { Some(Key::Ret) }
-        Event::KeyPressed{key:KeyCode::Num8, ctrl:false, shift:false} |
-        Event::KeyPressed{key:KeyCode::Up, ctrl:false, shift:false} => { Some(Key::Up) }
-        Event::KeyPressed{key:KeyCode::Num2, ctrl:false, shift:false} |
-        Event::KeyPressed{key:KeyCode::Down, ctrl:false, shift:false} => { Some(Key::Dn) }
-        Event::KeyPressed{key:KeyCode::Num6, ctrl:false, shift:false} |
-        Event::KeyPressed{key:KeyCode::Right, ctrl:false, shift:false} => { Some(Key::Rg) }
-        Event::KeyPressed{key:KeyCode::Num4, ctrl:false, shift:false} |
-        Event::KeyPressed{key:KeyCode::Left, ctrl:false, shift:false} => { Some(Key::Lf) }
-        Event::KeyPressed{key:KeyCode::Num1, ctrl:false, shift:false} => { Some(Key::DL) }
-        Event::KeyPressed{key:KeyCode::Num3, ctrl:false, shift:false} => { Some(Key::DR) }
-        Event::KeyPressed{key:KeyCode::Num7, ctrl:false, shift:false} => { Some(Key::UL) }
-        Event::KeyPressed{key:KeyCode::Num9, ctrl:false, shift:false} => { Some(Key::UR) }
-        Event::KeyPressed{key:KeyCode::Num5, ctrl:false, shift:false} => { Some(Key::Mid) }
-        Event::KeyPressed{key:KeyCode::NumPlus, ctrl:false, shift:false} => { Some(Key::Pls) }
-        Event::KeyPressed{key:KeyCode::NumMinus, ctrl:false, shift:false} => { Some(Key::Min) }
-        Event::KeyPressed{key:KeyCode::NumDivide, ctrl:false, shift:false} |
-        Event::KeyPressed{key:KeyCode::Slash, ctrl:false, shift:false} => { Some(Key::Slash) }
-        _ => None
+pub enum SpecialKey { Esc, Ret, Up, Dn, Lf, Rg, UL, UR, DL, DR, Mid, Pls, Min, Slash, Del }
+
+pub enum Key { Quit, Special(SpecialKey), Letter(char) }
+
+pub type Col = (u8, u8, u8);
+
+const WIDTH: usize = 68;
+const HEIGHT: usize = 30;
+const SCALE: usize = 32;
+const WINDOW_TITLE: &str = "Skoria";
+
+type Buffer = [[(char, Col, Col); WIDTH]; HEIGHT];
+
+static mut BUF: Buffer = [[(' ', (0, 0, 0), (0, 0, 0)); WIDTH]; HEIGHT];
+
+struct Console {
+    font: Font,
+    input_head: Sender<Key>,
+    size_pixels: UVec2
+}
+
+fn keytrans(kc: VirtualKeyCode) -> Option<SpecialKey> {
+    match kc {
+        VirtualKeyCode::Escape => Some(SpecialKey::Esc),
+        VirtualKeyCode::NumpadEnter | VirtualKeyCode::Return => Some(SpecialKey::Ret),
+        VirtualKeyCode::Numpad8 | VirtualKeyCode::Up => Some(SpecialKey::Up),
+        VirtualKeyCode::Numpad2 | VirtualKeyCode::Down => Some(SpecialKey::Dn),
+        VirtualKeyCode::Numpad6 | VirtualKeyCode::Right => Some(SpecialKey::Rg),
+        VirtualKeyCode::Numpad4 | VirtualKeyCode::Left => Some(SpecialKey::Lf),
+        VirtualKeyCode::Numpad1 => Some(SpecialKey::DL),
+        VirtualKeyCode::Numpad3 => Some(SpecialKey::DR),
+        VirtualKeyCode::Numpad7 => Some(SpecialKey::UL),
+        VirtualKeyCode::Numpad9 => Some(SpecialKey::UR),
+        VirtualKeyCode::Numpad5 => Some(SpecialKey::Mid),
+        VirtualKeyCode::NumpadAdd => Some(SpecialKey::Pls),
+        VirtualKeyCode::NumpadSubtract => Some(SpecialKey::Min),
+        VirtualKeyCode::NumpadDivide | VirtualKeyCode::Slash => Some(SpecialKey::Slash),
+        VirtualKeyCode::Backspace => Some(SpecialKey::Del),
+        _ => None,
     }
+}
+
+impl WindowHandler<bool> for Console {
+    fn on_user_event(&mut self, helper: &mut WindowHelper<bool>, _user_event: bool) {
+        helper.terminate_loop();
+    }
+
+    fn on_resize(&mut self, _helper: &mut WindowHelper<bool>, size_pixels: UVec2) { self.size_pixels = size_pixels; }
+
+    fn on_draw(&mut self, helper: &mut WindowHelper<bool>, graphics: &mut Graphics2D) {
+        graphics.clear_screen(Color::BLACK);
+
+        let xsc = self.size_pixels.x as f32 / WIDTH as f32;
+        let ysc = self.size_pixels.y as f32 / HEIGHT as f32;
+        let scale = if xsc < ysc { xsc } else { ysc };
+        let mut x = 0.0;
+        let mut y = 0.0;
+        unsafe {
+            for row in BUF {
+                for (ch, (fr, fg, fb), (br, bg, bb)) in row {
+                    let bl = self
+                        .font
+                        .layout_text_from_unindexed_codepoints(std::slice::from_ref(&ch),
+                                                               scale as f32,
+                                                               TextOptions::new());
+                    graphics.draw_rectangle(Rectangle::from_tuples((x * scale as f32, y * scale as f32),
+                                                                   ((x + 1.0) * scale as f32, (y + 1.0) * scale as f32)),
+                                            Color::from_int_rgb(17 * br, 17 * bg, 17 * bb));
+                    graphics.draw_text(((x + 0.5) * scale as f32 - 0.5 * &bl.width(), y * scale as f32),
+                                       Color::from_int_rgb(17 * fr, 17 * fg, 17 * fb), &bl);
+                    x += 1.0;
+                    if x == WIDTH as f32 {
+                        x = 0.0;
+                        y += 1.0;
+                    }
+                }
+            }
+        }
+
+        helper.request_redraw();
+    }
+
+    fn on_key_down(&mut self, _helper: &mut WindowHelper<bool>, virtual_key_code: Option<VirtualKeyCode>, _scancode: KeyScancode) {
+        if let Some(kc) = virtual_key_code {
+            if let Some(k) = keytrans(kc) {
+                self.input_head.send(Key::Special(k)).unwrap_or_default()
+            }
+        }
+    }
+
+    fn on_keyboard_char(&mut self, _helper: &mut WindowHelper<bool>, k: char) {
+        self.input_head.send(Key::Letter(k)).unwrap_or_default()
+    }
+}
+
+impl Console {
+    fn new(input_head: Sender<Key>, size_pixels: UVec2) -> Self {
+        let bytes = include_bytes!("../assets/fonts/CodeNewRoman.otf");
+
+        Self {
+            font: font::Font::new(bytes).unwrap(),
+            input_head,
+            size_pixels
+        }
+    }
+}
+
+pub struct Terminal {
+    input_tail: Option<Receiver<Key>>,
+    pub foreground: Col,
+    pub background: Col
+}
+
+impl Terminal {
+    pub fn new(rx: Receiver<Key>) -> Self {
+        Self {
+            input_tail: Some(rx),
+            foreground: (10, 10, 10),
+            background: (0, 0, 0)
+        }
+    }
+
+    pub fn dead() -> Self {
+        Self { input_tail: None, foreground: (0, 0, 0), background: (0, 0, 0) }
+    }
+}
+
+//07537033224 SevosNR1947
+
+thread_local! {
+    pub static TERM : RefCell<Terminal> = RefCell::new(Terminal::dead());
+}
+
+pub fn start(game: fn() -> ()) -> ! {
+    let size = UVec2::new((WIDTH * SCALE) as u32, (HEIGHT * SCALE) as u32);
+    let options = WindowCreationOptions::new_windowed(WindowSize::PhysicalPixels(size), None);
+    let window = Window::<bool>::new_with_user_events(WINDOW_TITLE, options.with_resizable(true)).unwrap();
+    let tube = window.create_user_event_sender();
+
+    let (tx, rx) = channel::<Key>();
+    thread::spawn(move || {
+        let term = Terminal::new(rx);
+        TERM.with(|t| {
+            t.replace(term);
+            game();
+        });
+        tube.send_event(true).unwrap();
+    });
+
+    let con = Console::new(tx, size);
+    window.run_loop(con);
 }
 
 pub fn key() -> Key {
-    for e in terminal::events() {
-        match ev2key(e) {
-            Some(k) => { return k }
-            None => { }
-        }
-    };
-    Key::Quit
+    TERM.with(|t| {
+        if let Ok(k) = t.borrow().input_tail.as_ref().unwrap().recv() { k } else { Key::Quit }
+    })
 }
 
 pub fn inkey() -> Option<Key> {
-    loop {
-        let e = terminal::read_event();
-        if e.is_none() { return None }
-        let key = ev2key(e.unwrap());
-        if key.is_some() { return key }
-    }
+    TERM.with(|t| {
+        if let Ok(k) = t.borrow().input_tail.as_ref().unwrap().try_recv() { Some(k) } else { None }
+    })
 }
 
-pub fn keyms(ms : u32) -> Option<Key> {
-    for _m in 1..ms {
-        let e = terminal::read_event();
-        if e.is_some() {
-            let key = ev2key(e.unwrap());
-            if key.is_some() { return key }
+pub fn keyms(ms: u32) -> Option<Key> {
+    TERM.with(|t| {
+        for _m in 1..ms {
+            match t.borrow().input_tail.as_ref().unwrap().try_recv() {
+                Ok(k) => { return Some(k); }
+                _ => thread::sleep(Duration::from_millis(1)),
+            }
         }
-        terminal::delay(1);
+        None
+    })
+}
+
+pub fn foreground(c: Col) { TERM.with(|t| t.borrow_mut().foreground = c); }
+
+pub fn background(c: Col) { TERM.with(|t| t.borrow_mut().background = c); }
+
+pub fn cur_bkgnd() -> Col { TERM.with(|t| t.borrow().background) }
+
+pub fn putc(x: usize, y: usize, c: char) {
+    unsafe {
+        TERM.with(|t| BUF[y][x] = (c, t.borrow().foreground, t.borrow().background));
     }
-    None
 }
 
-pub fn query(x : u32, y : u32, prompt : &str, maxlen : u32) -> Option<String> {
-    terminal::print_xy(x as i32, y as i32, prompt);
-    let startx = x + prompt.chars().count() as u32 + 1;
-    let sz = terminal::state::size();
-    let max = cmp::min(maxlen, sz.width as u32- startx);
-    terminal::read_str(Point::new(startx as i32, y as i32), max as i32)
-}
-
-pub type Col = (u8, u8, u8);
-pub fn foreground((r, g, b) : Col) { terminal::set_foreground(Color::from_rgb(17*r, 17*g, 17*b)); }
-pub fn background((r, g, b) : Col) { terminal::set_background(Color::from_rgb(17*r, 17*g, 17*b)); }
-
-pub fn print(x : u32, y : u32, s : &str) { terminal::print_xy(x as i32, y as i32, s); }
-pub fn putc(x : u32, y : u32, c : char) { terminal::put_xy(x as i32, y as i32, c); }
-
-pub fn hilist(x : u32, y : u32, items : &[&str], hl : u32) {
-    let mut i = 0;
-    let bk = Color::from_rgb(0, 0, 68);
-    let hi = Color::from_rgb(0, 0, 255);
-    for it in items {
-        terminal::with_background(if i==hl { hi } else { bk },
-                                  || terminal::print_xy(x as i32, (y + i) as i32, it));
-        i += 1;
+pub fn clear(x: usize, y: usize, w: usize, h: usize) {
+    for r in y..y + h {
+        for c in x..x + w {
+            putc(c, r, ' ');
+        }
     }
-    terminal::refresh();
 }
 
-pub fn initialise() { terminal::open("Skoria", 68, 30); }
-pub fn terminate() { terminal::close(); }
-pub fn flush() { terminal::refresh(); }
-pub fn base_colour() { foreground((13, 13, 10)); background((0, 0, 4)); }
-pub fn cls() { terminal::clear(None); }
+pub fn print(x: usize, y: usize, s: &str) {
+    let mut xx = x;
+    let mut yy = y;
+    for c in s.chars() {
+        putc(xx, yy, c);
+        xx += 1;
+        if x == WIDTH {
+            xx = 0;
+            yy += 1;
+            if yy == HEIGHT { yy = 0 }
+        }
+    }
+}
+
+pub fn read_str(x: usize, y: usize, max: usize) -> Option<String> {
+    let mut s: String = String::default();
+    loop {
+        print(x, y, &s);
+        match key() {
+            Key::Quit | Key::Special(SpecialKey::Esc) => return None,
+            Key::Special(SpecialKey::Ret) => return Some(s),
+            Key::Special(SpecialKey::Del) => {
+                putc(x, y + s.len() - 1, ' ');
+                s.pop();
+            },
+            Key::Letter(c) => if s.len() < max { s.push(c) },
+            _ => {}
+        }
+    }
+}
+
+pub fn query(x: usize, y: usize, prompt: &str, maxlen: usize) -> Option<String> {
+    print(x, y, prompt);
+    let startx = x + prompt.chars().count() + 1;
+    let maxlen = min(maxlen, WIDTH - startx);
+    read_str(startx, y, maxlen)
+}
+
 pub fn transparent() { /*terminal::composition(true);*/ }
+
 pub fn opaque() { /*terminal::composition(false);*/ }
-pub fn sleepms(ms : u32) { terminal::delay(ms as i32); }
-pub fn clear(x : u32, y : u32, w : u32, h : u32) { terminal::clear(Some(Rect::from_values(x as i32, y as i32, w as i32, h as i32))); }
+
+pub fn flush() {}
+
+pub fn sleepms(ms: u32) { thread::sleep(Duration::from_millis(ms as u64)) }
+
+pub fn cls() { clear(0, 0, WIDTH, HEIGHT); }
+
+pub fn base_colour() {
+    foreground((13, 13, 10));
+    background((0, 0, 4));
+}
 
 pub fn banner() {
     base_colour();
-    let sz = terminal::state::size();
-    let w = sz.width;
-    terminal::print_xy((w - 6)/2, 0, "SKORIA");
-    terminal::print_xy((w - 27)/2, 1, "A roguelike written it Rust");
-    terminal::print_xy((w - 22)/2, 2, "by Yannis Irvine, 2020");
+    let w = WIDTH;
+    print((w - 6) / 2, 0, "SKORIA");
+    print((w - 27) / 2, 1, "A roguelike written in Rust");
+    print((w - 22) / 2, 2, "by Yannis Irvine, 2020-2023");
     flush();
 }
 
-pub fn popup(msg : &str) {
+pub fn popup(msg: &str) {
     cls();
     print(0, 0, msg);
     flush();
     sleepms(2000);
 }
 
+pub fn hilist(x: usize, y: usize, items: &[&str], hl: usize) {
+    let mut i: usize = 0;
+    let bk = (0, 0, 4);
+    let hi = (0, 0, 15);
+    let old_bk = cur_bkgnd();
+    for it in items {
+        background(if i == hl { hi } else { bk });
+        print(x, y + i, it);
+        i += 1;
+    }
+    background(old_bk);
+    flush();
+}
+
 pub enum Para { Back, Quit }
 
-pub fn menu<T: AsRef<str>>(x : u32, y : u32, title : &str, init : u32, options : &[T]) -> Result<u32, Para> {
-    let w = cmp::max(options.iter().map(|o| o.as_ref().chars().count()).max().unwrap(), title.chars().count());
+pub fn menu<T: AsRef<str>>(x: usize, y: usize, title: &str, init: usize, options: &[T]) -> Result<usize, Para> {
+    let w = max(options.iter().map(|o| o.as_ref().chars().count()).max().unwrap(), title.chars().count());
     let tit = format!("{:^1$}", title, w);
     let dashes = format!("{:-^1$}", "", w);
-    let mut items : Vec<&str> = vec![&tit, &dashes];
+    let mut items: Vec<&str> = vec![&tit, &dashes];
     for o in options { items.push(o.as_ref()) };
 
     let mut sel = init;
-    let n = options.len() as u32;
-    terminal::clear(Some(Rect::from_values(x as i32, y as i32, 2+w as i32, 3+options.len() as i32)));
+    let n = options.len();
+    clear(x, y, 2 + w, 3 + options.len());
     loop {
-        hilist(x+1, y, items.as_slice(), 2+sel);
+        hilist(x + 1, y, items.as_slice(), 2 + sel);
         match key() {
             Key::Quit => { return Err(Para::Quit) }
-            Key::Esc => { return Err(Para::Back) }
-            Key::Up => { sel = (sel + n - 1) % n; }
-            Key::Dn => { sel = (sel + 1) % n; }
-            Key::Ret => { return Ok(sel) }
+            Key::Special(k) => match k {
+                SpecialKey::Esc => { return Err(Para::Back) }
+                SpecialKey::Up => { sel = (sel + n - 1) % n; }
+                SpecialKey::Dn => { sel = (sel + 1) % n; }
+                SpecialKey::Ret => { return Ok(sel) }
+                _ => ()
+            }
             _ => ()
         }
     }
 }
 
-use std::cell::RefCell;
-
 thread_local! {
     static MESSAGES: RefCell<Vec<(Col,String)>> = RefCell::new(Vec::new());
     //static MSGS_ADDED : RefCell<bool> = RefCell::new(false);
 }
-static MAX_NUM_MSGS : usize = 20;
+static MAX_NUM_MSGS: usize = 20;
 
-pub fn message(c : Col, m: &str) {
+pub fn message(c: Col, m: &str) {
     MESSAGES.with(|msg| {
         if msg.borrow().len() < MAX_NUM_MSGS {
             msg.borrow_mut().push((c, String::from(m)));
@@ -163,9 +347,9 @@ pub fn message(c : Col, m: &str) {
     //MSGS_ADDED.with(|a| { *a.borrow_mut() = true; });
 }
 
-pub fn single_message(c : Col, m: &str) {
+pub fn single_message(c: Col, m: &str) {
     MESSAGES.with(|msg| {
-        if let Some((cc,mm)) = msg.borrow().last() {
+        if let Some((cc, mm)) = msg.borrow().last() {
             if cc.0 == c.0 && cc.1 == c.1 && cc.2 == c.2 && mm == m { return }
         }
         message(c, m);
@@ -178,10 +362,9 @@ pub fn purge_messages() {
     });
 }
 
-pub fn display_messages(x : u32, y : u32, h : u32) {
+pub fn display_messages(x: usize, y: usize, h: usize) {
     //if ! MSGS_ADDED.with(|a| { if *a.borrow() { *a.borrow_mut() = false; true } else { false } }) { return }
-    let sz = terminal::state::size();
-    let w = sz.width as u32 - x;
+    let w = WIDTH - x;
     foreground((12, 14, 12));
     background((0, 0, 0));
     clear(x, y, w, h);
@@ -190,15 +373,15 @@ pub fn display_messages(x : u32, y : u32, h : u32) {
         let mut lines = Vec::new();
         let msgs = &*msgs.borrow();
         for m in msgs {
-            for c in m.1.as_bytes().chunks(w as usize) {
+            for c in m.1.as_bytes().chunks(w) {
                 lines.push((m.0, std::str::from_utf8(c).unwrap()))
             }
         }
 
         for (i, m) in lines.iter().rev().enumerate() {
-            if i as u32 == h { break }
+            if i == h { break }
             foreground(m.0);
-            print(x, y+h-1-i as u32, m.1);
+            print(x, y + h - 1 - i, m.1);
         }
     })
 }
