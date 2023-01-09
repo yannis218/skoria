@@ -4,7 +4,7 @@ use speedy2d::font::Font;
 use speedy2d::font::TextLayout;
 use speedy2d::font::TextOptions;
 use speedy2d::shape::{Rectangle};
-use speedy2d::window::{KeyScancode, WindowCreationOptions};
+use speedy2d::window::{KeyScancode, UserEventSender, WindowCreationOptions};
 use speedy2d::window::VirtualKeyCode;
 use speedy2d::window::WindowHandler;
 use speedy2d::window::WindowHelper;
@@ -63,14 +63,19 @@ fn keytrans(kc: VirtualKeyCode) -> Option<SpecialKey> {
     }
 }
 
-impl WindowHandler<bool> for Console {
-    fn on_user_event(&mut self, helper: &mut WindowHelper<bool>, _user_event: bool) {
-        helper.terminate_loop();
+enum Directive { Refresh, Quit }
+
+impl WindowHandler<Directive> for Console {
+    fn on_user_event(&mut self, helper: &mut WindowHelper<Directive>, directive: Directive) {
+        match directive {
+            Directive::Refresh => helper.request_redraw(),
+            Directive::Quit => helper.terminate_loop()
+        }
     }
 
-    fn on_resize(&mut self, _helper: &mut WindowHelper<bool>, size_pixels: UVec2) { self.size_pixels = size_pixels; }
+    fn on_resize(&mut self, _helper: &mut WindowHelper<Directive>, size_pixels: UVec2) { self.size_pixels = size_pixels; }
 
-    fn on_draw(&mut self, helper: &mut WindowHelper<bool>, graphics: &mut Graphics2D) {
+    fn on_draw(&mut self, _helper: &mut WindowHelper<Directive>, graphics: &mut Graphics2D) {
         graphics.clear_screen(Color::BLACK);
 
         let xsc = self.size_pixels.x as f32 / WIDTH as f32;
@@ -99,11 +104,9 @@ impl WindowHandler<bool> for Console {
                 }
             }
         }
-
-        helper.request_redraw();
     }
 
-    fn on_key_down(&mut self, _helper: &mut WindowHelper<bool>, virtual_key_code: Option<VirtualKeyCode>, _scancode: KeyScancode) {
+    fn on_key_down(&mut self, _helper: &mut WindowHelper<Directive>, virtual_key_code: Option<VirtualKeyCode>, _scancode: KeyScancode) {
         if let Some(kc) = virtual_key_code {
             if let Some(k) = keytrans(kc) {
                 self.input_head.send(Key::Special(k)).unwrap_or_default()
@@ -111,7 +114,7 @@ impl WindowHandler<bool> for Console {
         }
     }
 
-    fn on_keyboard_char(&mut self, _helper: &mut WindowHelper<bool>, k: char) {
+    fn on_keyboard_char(&mut self, _helper: &mut WindowHelper<Directive>, k: char) {
         self.input_head.send(Key::Letter(k)).unwrap_or_default()
     }
 }
@@ -128,46 +131,52 @@ impl Console {
     }
 }
 
-pub struct Terminal {
+struct Terminal {
     input_tail: Option<Receiver<Key>>,
+    sender: Option<UserEventSender<Directive>>,
     pub foreground: Col,
     pub background: Col
 }
 
 impl Terminal {
-    pub fn new(rx: Receiver<Key>) -> Self {
+    fn new(rx: Receiver<Key>, tx: UserEventSender<Directive>) -> Self {
         Self {
             input_tail: Some(rx),
+            sender: Some(tx),
             foreground: (10, 10, 10),
             background: (0, 0, 0)
         }
     }
 
-    pub fn dead() -> Self {
-        Self { input_tail: None, foreground: (0, 0, 0), background: (0, 0, 0) }
+    fn dead() -> Self {
+        Self { input_tail: None, sender: None, foreground: (0, 0, 0), background: (0, 0, 0) }
+    }
+
+    fn post(&self, dir: Directive) {
+        self.sender.as_ref().unwrap().send_event(dir).unwrap();
     }
 }
 
 //07537033224 SevosNR1947
 
 thread_local! {
-    pub static TERM : RefCell<Terminal> = RefCell::new(Terminal::dead());
+    static TERM : RefCell<Terminal> = RefCell::new(Terminal::dead());
 }
 
 pub fn start(game: fn() -> ()) -> ! {
     let size = UVec2::new((WIDTH * SCALE) as u32, (HEIGHT * SCALE) as u32);
     let options = WindowCreationOptions::new_windowed(WindowSize::PhysicalPixels(size), None);
-    let window = Window::<bool>::new_with_user_events(WINDOW_TITLE, options.with_resizable(true)).unwrap();
+    let window = Window::<Directive>::new_with_user_events(WINDOW_TITLE, options.with_resizable(true)).unwrap();
     let tube = window.create_user_event_sender();
 
     let (tx, rx) = channel::<Key>();
     thread::spawn(move || {
-        let term = Terminal::new(rx);
+        let term = Terminal::new(rx, tube);
         TERM.with(|t| {
             t.replace(term);
             game();
+            t.borrow().post(Directive::Quit);
         });
-        tube.send_event(true).unwrap();
     });
 
     let con = Console::new(tx, size);
@@ -209,6 +218,10 @@ pub fn putc(x: usize, y: usize, c: char) {
         TERM.with(|t| BUF[y][x] = (c, t.borrow().foreground, t.borrow().background));
     }
 }
+
+pub fn flush() { TERM.with(|t| t.borrow().post(Directive::Refresh)); }
+
+
 
 pub fn clear(x: usize, y: usize, w: usize, h: usize) {
     for r in y..y + h {
@@ -259,8 +272,6 @@ pub fn query(x: usize, y: usize, prompt: &str, maxlen: usize) -> Option<String> 
 pub fn transparent() { /*terminal::composition(true);*/ }
 
 pub fn opaque() { /*terminal::composition(false);*/ }
-
-pub fn flush() {}
 
 pub fn sleepms(ms: u32) { thread::sleep(Duration::from_millis(ms as u64)) }
 

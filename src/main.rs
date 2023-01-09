@@ -522,7 +522,7 @@ fn start_menu() {
         ui::base_colour();
         ui::cls();
         ui::banner();
-        match ui::menu(0, 9, "Start Menu", 0, &["Continue An Adventure", "Start A New Character", "Quit"]) {
+        match ui::menu(0, 9, "Start Menu", 0, &["Continue an Adventure", "Start a New Character", "Exit the Game"]) {
             Ok(0) => { if start_play(game_load()) { return } }
             Ok(1) => { if start_play(player::char_create().map(|pc|{ State::new(pc) })) { return } }
             Ok(2) | Err(ui::Para::Quit) => { return }
